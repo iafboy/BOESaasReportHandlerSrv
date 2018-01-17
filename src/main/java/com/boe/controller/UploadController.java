@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -58,5 +59,8 @@ public class UploadController {
     public String uploadStatus() {
         return "uploadStatus";
     }
+    private String deCompressFile(File document){
 
+        return null;
+    }
 }
