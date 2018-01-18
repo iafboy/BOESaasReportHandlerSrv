@@ -74,9 +74,10 @@ public class UploadFileClient {
                         has=true;
                         break;
                     }
-                if(!has)
-                executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService, file));
-
+                if(!has) {
+                    RestTemplate restTemplate = new RestTemplate();
+                    executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService,restTemplate, file));
+                }
             }
         }
     }
@@ -86,15 +87,17 @@ class UploadProceser implements Runnable {
     private  Logger logger= LoggerFactory.getLogger(UploadProceser.class);
     private String uploadServiceUrl;
     private SevenZipService sevenZipService;
+    private RestTemplate restTemplate;
     private String local7zPath;
     private String succFolder;
     private String errorFolder;
     private File inFile;
 
-    public UploadProceser(String uploadServiceUrl_,String local7zPath_,String succFolder_,String errorFolder_,SevenZipService sevenZipService_,File file_){
+    public UploadProceser(String uploadServiceUrl_,String local7zPath_,String succFolder_,String errorFolder_,SevenZipService sevenZipService_, RestTemplate restTemplate_,File file_){
         this.uploadServiceUrl=uploadServiceUrl_;
         this.local7zPath=local7zPath_;
         this.sevenZipService=sevenZipService_;
+        this.restTemplate=restTemplate_;
         this.succFolder=succFolder_;
         this.errorFolder=errorFolder_;
         this.inFile=file_;
@@ -132,7 +135,6 @@ class UploadProceser implements Runnable {
 
     private void uploadDocument(File document) {
         if(document==null||document.length()<1) return;
-        RestTemplate restTemplate = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
         MediaType type = MediaType.parseMediaType("application/json; charset=UTF-8");
         headers.setContentType(type);
