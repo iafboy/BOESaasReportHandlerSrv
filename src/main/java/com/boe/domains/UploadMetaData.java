@@ -4,7 +4,7 @@ import java.sql.Date;
 
 public class UploadMetaData {
     private String fileName;
-    private Date handleDate;
+    private long handleDate;
     private boolean uploaded;
     private String errorMsg;
 
@@ -16,11 +16,11 @@ public class UploadMetaData {
         this.fileName = fileName;
     }
 
-    public Date getHandleDate() {
+    public long getHandleDate() {
         return handleDate;
     }
 
-    public void setHandleDate(Date handleDate) {
+    public void setHandleDate(long handleDate) {
         this.handleDate = handleDate;
     }
 

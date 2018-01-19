@@ -1,19 +1,25 @@
 package com.boe.controller;
 
+import com.alibaba.fastjson.JSON;
+import com.boe.domains.UploadMetaData;
+import com.boe.service.SevenZipService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import javax.annotation.Resource;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 @Controller
 public class UploadController {
@@ -22,10 +28,19 @@ public class UploadController {
     @Value("${uploaded.folder}")
     private String UPLOADED_FOLDER;
 
+    @Value("${uploaded.succ.folder}")
+    private String webSuccFolder;
+
+    @Value("${uploaded.error.folder}")
+    private String webErrorFolder;
+
     @GetMapping("/")
     public String index() {
         return "upload";
     }
+
+    @Resource(name="SevenZipService")
+    private SevenZipService sevenZipService;
 
     @PostMapping("/upload")
     public String singleFileUpload(@RequestParam("file") MultipartFile file,
@@ -51,16 +66,6 @@ public class UploadController {
                     " uploaded error: " + e.getMessage());
            logger.error(e.getMessage(),e);
         }
-
         return "redirect:/uploadStatus";
-    }
-
-    @GetMapping("/uploadStatus")
-    public String uploadStatus() {
-        return "uploadStatus";
-    }
-    private String deCompressFile(File document){
-
-        return null;
     }
 }

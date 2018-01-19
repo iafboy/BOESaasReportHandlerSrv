@@ -1,10 +1,14 @@
 package com.boe.client;
 
+import com.alibaba.fastjson.JSON;
 import com.boe.controller.UploadController;
+import com.boe.domains.UploadMetaData;
 import com.boe.service.SevenZipService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -49,7 +53,12 @@ public class UploadFileClient {
     private SevenZipService sevenZipService;
 
     private ExecutorService executor;
-
+    @Autowired
+    private RestTemplate restTemplate;
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
     @PostConstruct
     public void createThreadPool(){
         executor = Executors.newFixedThreadPool(threadWorkerNum);
@@ -75,7 +84,7 @@ public class UploadFileClient {
                         break;
                     }
                 if(!has) {
-                    RestTemplate restTemplate = new RestTemplate();
+                    //RestTemplate restTemplate=new RestTemplate();
                     executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService,restTemplate, file));
                 }
             }
@@ -105,22 +114,30 @@ class UploadProceser implements Runnable {
 
     @Override
     public void run() {
-        logger.debug(Thread.currentThread().getName()+" begin handler file "+inFile.getAbsolutePath());
+        long beginTime=System.currentTimeMillis();
         //压缩文件
         File outfile=sevenZipService.compressDocument(inFile);
         //上传文件
-        if(outfile!=null){
-            uploadDocument(outfile);
-            //删除压缩文件
-            outfile.delete();
-            //移动源文件至成功处理/失败文件夹
-            moveFile(inFile,true);
-        }else{
-            moveFile(inFile,false);
+        try {
+            if (outfile != null) {
+                if (uploadDocument(outfile)) {
+                    //移动源文件至成功处理/失败文件夹
+                    moveFile(inFile, true);
+                } else {
+                    moveFile(inFile, false);
+                }
+                logger.debug(Thread.currentThread().getName()+" file uploaded and moved source file");
+                //删除压缩文件
+                outfile.delete();
+            } else {
+                moveFile(inFile, false);
+            }
+            if (inFile.exists())
+                inFile.delete();
+        }catch (Exception ex){
+            logger.error(ex.getMessage(),ex);
         }
-        if(inFile.exists())
-            inFile.delete();
-        logger.debug(Thread.currentThread().getName()+" work done");
+        logger.debug(Thread.currentThread().getName()+" work done costs: "+(System.currentTimeMillis()-beginTime));
     }
 
     private void moveFile(File inFile, boolean succ) {
@@ -133,8 +150,9 @@ class UploadProceser implements Runnable {
         inFile.renameTo(new File(folderPath+File.separator+inFile.getName()+"-"+String.valueOf(System.currentTimeMillis())));
     }
 
-    private void uploadDocument(File document) {
-        if(document==null||document.length()<1) return;
+    private boolean uploadDocument(File document) {
+        if(document==null||document.length()<1) return false;
+        long start=System.currentTimeMillis();
         HttpHeaders headers = new HttpHeaders();
         MediaType type = MediaType.parseMediaType("application/json; charset=UTF-8");
         headers.setContentType(type);
@@ -142,7 +160,17 @@ class UploadProceser implements Runnable {
         MultiValueMap<String, Object> parts = new LinkedMultiValueMap<String, Object>();
         parts.add("file", new FileSystemResource(document.getAbsoluteFile()));
         logger.debug("Thread "+Thread.currentThread().getName()+ "begin upload file");
-        String result = restTemplate.postForObject(uploadServiceUrl, parts,String.class);
-        logger.debug("Thread "+Thread.currentThread().getName()+ " return upload result:\n"+result.toString());
+        try {
+            String result = restTemplate.postForObject(uploadServiceUrl, parts, String.class);
+            UploadMetaData umd = JSON.parseObject(result, UploadMetaData.class);
+            logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" +(System.currentTimeMillis()-start));
+            if (umd != null) {
+                return true;
+            }
+
+        }catch(Exception ex){
+            logger.error(ex.getMessage(),ex);
+        }
+        return false;
     }
 }

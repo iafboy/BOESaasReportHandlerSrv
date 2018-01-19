@@ -67,8 +67,8 @@ public class SevenZipService {
     @Value("${decompressfile.path}")
     private String decompressFilePath;
 
-    public boolean deCompressDocument(File docPath) {
-        if (docPath == null ) return false;
+    public File deCompressDocument(File docPath) {
+        if (docPath == null ) return null;
         boolean result = false;
         File fin = null;
         File fout = null;
@@ -102,7 +102,8 @@ public class SevenZipService {
             decoder.Code(compIn, decompOut, outSize);
             decompOut.writeTo(fos);
             decompOut.flush();
-            result = true;
+            if(fout!=null&&fout.exists()&&fout.length()>0)
+            return fout;
         } catch (Exception ex) {
             logger.error(ex.getMessage(), ex);
         } finally {
@@ -128,6 +129,6 @@ public class SevenZipService {
                     logger.error(e.getMessage(), e);
                 }
         }
-        return result;
+        return null;
     }
 }
