@@ -4,17 +4,25 @@ import com.alibaba.fastjson.JSON;
 import com.boe.controller.UploadController;
 import com.boe.domains.UploadMetaData;
 import com.boe.service.SevenZipService;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.util.concurrent.ListenableFutureCallback;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
@@ -57,7 +65,7 @@ public class UploadFileClient {
     private RestTemplate restTemplate;
     @Bean
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        return new RestTemplate ();
     }
     @PostConstruct
     public void createThreadPool(){
@@ -101,7 +109,7 @@ class UploadProceser implements Runnable {
     private String succFolder;
     private String errorFolder;
     private File inFile;
-
+    private String restResp;
     public UploadProceser(String uploadServiceUrl_,String local7zPath_,String succFolder_,String errorFolder_,SevenZipService sevenZipService_, RestTemplate restTemplate_,File file_){
         this.uploadServiceUrl=uploadServiceUrl_;
         this.local7zPath=local7zPath_;
@@ -122,12 +130,13 @@ class UploadProceser implements Runnable {
             if (outfile != null) {
                 if (uploadDocument(outfile)) {
                     //移动源文件至成功处理/失败文件夹
-                    moveFile(inFile, true);
+                    moveFile(outfile, true);
+                    logger.debug(Thread.currentThread().getName()+" file uploaded and moved source file");
                 } else {
-                    moveFile(inFile, false);
+                    moveFile(outfile, false);
                 }
-                logger.debug(Thread.currentThread().getName()+" file uploaded and moved source file");
                 //删除压缩文件
+                if(outfile.exists())
                 outfile.delete();
             } else {
                 moveFile(inFile, false);
@@ -147,9 +156,8 @@ class UploadProceser implements Runnable {
         }else{
             folderPath=errorFolder;
         }
-        inFile.renameTo(new File(folderPath+File.separator+inFile.getName()+"-"+String.valueOf(System.currentTimeMillis())));
+        inFile.renameTo(new File(folderPath+File.separator+inFile.getName()+"."+String.valueOf(System.currentTimeMillis())+".7z"));
     }
-
     private boolean uploadDocument(File document) {
         if(document==null||document.length()<1) return false;
         long start=System.currentTimeMillis();
@@ -159,11 +167,14 @@ class UploadProceser implements Runnable {
         headers.add("Accept", MediaType.APPLICATION_JSON.toString());
         MultiValueMap<String, Object> parts = new LinkedMultiValueMap<String, Object>();
         parts.add("file", new FileSystemResource(document.getAbsoluteFile()));
+        HttpEntity<Object> hpEntity = new HttpEntity<Object>(parts, headers);
         logger.debug("Thread "+Thread.currentThread().getName()+ "begin upload file");
         try {
-            String result = restTemplate.postForObject(uploadServiceUrl, parts, String.class);
-            UploadMetaData umd = JSON.parseObject(result, UploadMetaData.class);
+            String restResp = restTemplate.postForObject(uploadServiceUrl, parts, String.class);
             logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" +(System.currentTimeMillis()-start));
+            UploadMetaData umd=null;
+            if(restResp!=null)
+                umd= JSON.parseObject(restResp, UploadMetaData.class);
             if (umd != null) {
                 return true;
             }
