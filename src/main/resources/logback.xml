@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
+    <property name="log_dir" value="./logs" />
+    <property name="maxHistory" value="30"/>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <layout class="ch.qos.logback.classic.PatternLayout">
             <Pattern>
                 %d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n
             </Pattern>
         </layout>
+    </appender>
+    <appender name="rfiles" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log_dir}/ReportHandlerSrv.%d{yyyy-MM-dd}.log
+            </fileNamePattern>
+            <maxHistory>${maxHistory}</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n</pattern>
+        </encoder>
     </appender>
 
     <logger name="org.springframework.web" level="error" additivity="false">
@@ -15,6 +26,7 @@
 
     <logger name="com.boe" level="debug" additivity="false">
         <appender-ref ref="STDOUT"/>
+        <appender-ref ref="rfiles"/>
     </logger>
 
     <root level="info">
