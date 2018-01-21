@@ -131,4 +131,63 @@ public class SevenZipService {
         }
         return null;
     }
+    public byte[] deCompressDocumentToBytes(File docPath) {
+        byte[] result=null;
+        if (docPath == null ) return null;
+        File fin = null;
+        FileInputStream compIn = null;
+        ByteArrayOutputStream decompOut = null;
+        FileOutputStream fos = null;
+        try {
+            fin = docPath;
+
+            compIn = new FileInputStream(fin);
+            decompOut = new ByteArrayOutputStream((int) fin.length());
+            int propertiesSize = 5;
+            byte[] properties = new byte[propertiesSize];
+            if (compIn.read(properties, 0, propertiesSize) != propertiesSize) {
+                throw new Exception("input .lzma file is too short");
+            }
+
+            Decoder decoder = new Decoder();
+            if (!decoder.SetDecoderProperties(properties)) {
+                throw new Exception("Incorrect stream properties");
+            }
+            long outSize = 0L;
+            for (int i = 0; i < 8; ++i) {
+                int v = compIn.read();
+                if (v < 0) {
+                    throw new Exception("Can't read stream size");
+                }
+                outSize |= (long) v << 8 * i;
+            }
+            decoder.Code(compIn, decompOut, outSize);
+            result=decompOut.toByteArray();
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    logger.error(e.getMessage(), e);
+                }
+            }
+            if (decompOut != null) {
+                try {
+                    decompOut.flush();
+                    decompOut.close();
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
+            }
+            if (compIn != null)
+                try {
+                    compIn.close();
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
+        }
+        return result;
+    }
 }

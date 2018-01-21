@@ -1,13 +1,12 @@
 package com.boe.client;
 
+import ch.qos.logback.core.util.FileUtil;
 import com.alibaba.fastjson.JSON;
 import com.boe.controller.UploadController;
 import com.boe.domains.Document;
 import com.boe.domains.UploadMetaData;
 import com.boe.service.SevenZipService;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,12 +23,11 @@ import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.nio.channels.FileChannel.MapMode;
-
 
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -38,7 +36,7 @@ import javax.annotation.Resource;
 
 @RestController
 public class UploadFileClient {
-    private  Logger logger= LoggerFactory.getLogger(UploadController.class);
+    private Logger logger = LoggerFactory.getLogger(UploadController.class);
 
     @Value("${uploadservice.url}")
     private String uploadServiceUrl;
@@ -57,40 +55,50 @@ public class UploadFileClient {
     private int threadWorkerNum;
 
     @Value("${boe.schedule.trigger}")
-    private boolean scheduleTrigger=false;
+    private boolean scheduleTrigger = false;
 
-    @Resource(name="SevenZipService")
+    @Resource(name = "SevenZipService")
     private SevenZipService sevenZipService;
 
     private ExecutorService executor;
     @Autowired
-    private RestTemplate  resttemplate;
+    private RestTemplate resttemplate;
+
     @Bean
-    public RestTemplate resttemplate(){return new RestTemplate();}
-    @Autowired
-    private AsyncRestTemplate  restTemplate;
-    @Bean
-    public AsyncRestTemplate  restTemplate () {
-        return new AsyncRestTemplate  ();
+    public RestTemplate resttemplate() {
+        return new RestTemplate();
     }
+
+    @Autowired
+    private AsyncRestTemplate restTemplate;
+
+    @Bean
+    public AsyncRestTemplate restTemplate() {
+        return new AsyncRestTemplate();
+    }
+
     @PostConstruct
-    public void createThreadPool(){
+    public void createThreadPool() {
         executor = Executors.newFixedThreadPool(threadWorkerNum);
     }
 
     @Scheduled(cron = "${boe.schedule.cfg}")
-    public void uploadFilesJob(){
+    public void uploadFilesJob() {
         logger.debug(" Trigger check Schedule ");
-        if(!scheduleTrigger) return;
+        if (!scheduleTrigger) return;
         //扫描文件列表
-        File uploadFolder=new File(uploadWorkFolder);
-        File[] files=uploadFolder.listFiles();
-        File[] workingfiles=new File(local7zPath).listFiles();
-        if(files!=null&&files.length>0) {
+        File uploadFolder = new File(uploadWorkFolder);
+        File[] files = uploadFolder.listFiles();
+        File[] workingfiles = new File(local7zPath).listFiles();
+        //扫描工作文件夹剩余的文件继续上传
+        for (File file : workingfiles) {
+            executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService, restTemplate, resttemplate, file));
+        }
+        if (files != null && files.length > 0) {
             //分配多线程
             //  1.压缩文件
             //  2.批量上传
-            for(File file:files) {
+            for (File file : files) {
                 boolean has = false;
                 for (File wfile : workingfiles)
                     if (file.getName().equals(wfile.getName().substring(0, wfile.getName().length() - 3))) {
@@ -99,18 +107,15 @@ public class UploadFileClient {
                     }
                 if (!has) {
                     //RestTemplate restTemplate=new RestTemplate();
-                    executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService, restTemplate,resttemplate,file));
+                    executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService, restTemplate, resttemplate, file));
                 }
             }
         }
-        //扫描工作文件夹剩余的文件继续上传
-        for(File file:workingfiles){
-            executor.submit(new UploadProceser(uploadServiceUrl, local7zPath, succFolder, errorFolder, sevenZipService,restTemplate, resttemplate,file));
-        }
     }
 }
+
 class UploadProceser implements Runnable {
-    private  Logger logger= LoggerFactory.getLogger(UploadProceser.class);
+    private Logger logger = LoggerFactory.getLogger(UploadProceser.class);
     private String uploadServiceUrl;
     private SevenZipService sevenZipService;
     private AsyncRestTemplate restTemplate;
@@ -120,101 +125,120 @@ class UploadProceser implements Runnable {
     private String errorFolder;
     private File inFile;
     private String restResp;
-    public UploadProceser(String uploadServiceUrl_,String local7zPath_,String succFolder_,String errorFolder_,SevenZipService sevenZipService_, AsyncRestTemplate restTemplate_,RestTemplate resttemplate,File file_){
-        this.uploadServiceUrl=uploadServiceUrl_;
-        this.local7zPath=local7zPath_;
-        this.sevenZipService=sevenZipService_;
-        this.restTemplate=restTemplate_;
-        this.resttemplate=resttemplate;
-        this.succFolder=succFolder_;
-        this.errorFolder=errorFolder_;
-        this.inFile=file_;
+
+    public UploadProceser(String uploadServiceUrl_, String local7zPath_, String succFolder_, String errorFolder_, SevenZipService sevenZipService_, AsyncRestTemplate restTemplate_, RestTemplate resttemplate, File file_) {
+        this.uploadServiceUrl = uploadServiceUrl_;
+        this.local7zPath = local7zPath_;
+        this.sevenZipService = sevenZipService_;
+        this.restTemplate = restTemplate_;
+        this.resttemplate = resttemplate;
+        this.succFolder = succFolder_;
+        this.errorFolder = errorFolder_;
+        this.inFile = file_;
     }
 
     @Override
     public void run() {
-        long beginTime=System.currentTimeMillis();
+        long beginTime = System.currentTimeMillis();
         //压缩文件
-        File outfile=sevenZipService.compressDocument(inFile);
-        //上传文件
-        try {
-            if (outfile != null) {
-                Document doc=this.parseDocument(outfile);
-                if(doc!=null)
-                if (restPostDocument(doc)) {
-                    //移动源文件至成功处理/失败文件夹
-                    moveFile(outfile, true);
-                    logger.debug(Thread.currentThread().getName()+" file uploaded and moved source file");
-                } else {
-                    moveFile(outfile, false);
-                }
-                //删除压缩文件
-                if(outfile.exists())
-                outfile.delete();
-            } else {
-                moveFile(inFile, false);
+        File outfile = null;
+        if (!".7z".equals(inFile.getName().substring(inFile.getName().length() - 3))) {
+            outfile = sevenZipService.compressDocument(inFile);
+            try {
+                FileUtils.forceDelete(inFile);
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
             }
-            if (inFile.exists())
-                inFile.delete();
-        }catch (Exception ex){
-            logger.error(ex.getMessage(),ex);
+        } else {
+            outfile = inFile;
         }
-        logger.debug(Thread.currentThread().getName()+" work done costs: "+(System.currentTimeMillis()-beginTime));
+        if (outfile != null)
+            //上传文件
+            try {
+                if (outfile != null) {
+                    Document doc = this.parseDocument(outfile);
+                    if (doc != null)
+                        restPostDocument(doc);
+                    //删除压缩文件
+                    if (outfile.exists())
+                        FileUtils.forceDelete(outfile);
+                }
+            } catch (Exception ex) {
+                logger.error(ex.getMessage(), ex);
+            }
+        logger.debug(Thread.currentThread().getName() + " work done costs: " + (System.currentTimeMillis() - beginTime));
     }
 
 
-    private Document parseDocument(File in){
-        Document doc=null;
-        if(in!=null) {
-            doc=new Document();
+    private Document parseDocument(File in) {
+        Document doc = null;
+        if (in != null) {
+            doc = new Document();
             doc.setFileName(in.getName());
             doc.setConvertTime(System.currentTimeMillis());
             try {
-                doc.setContents(toByteArray(in.getAbsolutePath()));
+                byte[] content = fileToByteArray(in.getAbsolutePath());
+                doc.setContents(content);
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.error(e.getMessage(), e);
             }
         }
         return doc;
     }
-    private byte[] toByteArray(String filename) throws Exception {
-        FileChannel fc = null;
+
+    public byte[] fileToByteArray(String filename) throws Exception {
+        byte[] result = null;
+        File f = new File(filename);
+        if (!f.exists()) {
+            throw new FileNotFoundException(filename);
+        }
+        FileChannel channel = null;
+        FileInputStream fs = null;
         try {
-            fc = new RandomAccessFile(filename, "r").getChannel();
-            MappedByteBuffer byteBuffer = fc.map(MapMode.READ_ONLY, 0,
-                    fc.size()).load();
-            System.out.println(byteBuffer.isLoaded());
-            byte[] result = new byte[(int) fc.size()];
-            if (byteBuffer.remaining() > 0) {
-                // System.out.println("remain");
-                byteBuffer.get(result, 0, byteBuffer.remaining());
+            fs = new FileInputStream(f);
+            channel = fs.getChannel();
+            ByteBuffer byteBuffer = ByteBuffer.allocate((int) channel.size());
+            while ((channel.read(byteBuffer)) > 0) {
             }
-            return result;
-        } catch (IOException e) {
-            e.printStackTrace();
+            result = byteBuffer.array();
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
             throw e;
         } finally {
             try {
-                fc.close();
+                channel.close();
+            } catch (Exception e) {
+                logger.error(e.getMessage(), e);
+            }
+            try {
+                fs.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.error(e.getMessage(), e);
             }
         }
+        return result;
     }
 
     private void moveFile(File inFile, boolean succ) {
         String folderPath;
-        if(succ){
-            folderPath=succFolder;
-        }else{
-            folderPath=errorFolder;
+        if (succ) {
+            folderPath = succFolder;
+        } else {
+            folderPath = errorFolder;
         }
-        inFile.renameTo(new File(folderPath+File.separator+inFile.getName()+"."+String.valueOf(System.currentTimeMillis())+".7z"));
+
+        try {
+            FileUtils.copyFile(inFile, new File(folderPath + File.separator + String.valueOf(System.currentTimeMillis()) + "." + inFile.getName()));
+            FileUtils.forceDelete(inFile);
+            logger.debug("moved file " + inFile.getAbsolutePath() + " tp " + folderPath + File.separator + String.valueOf(System.currentTimeMillis()) + "." + inFile.getName());
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+        }
     }
 
-    private boolean uploadDocument(Document document) {
-        if(document==null||document.getContents()==null) return false;
-        long start=System.currentTimeMillis();
+    private boolean uploadDocumentFile(Document document) {
+        if (document == null || document.getContents() == null) return false;
+        long start = System.currentTimeMillis();
         HttpHeaders headers = new HttpHeaders();
         MediaType type = MediaType.parseMediaType("application/json; charset=UTF-8");
         headers.setContentType(type);
@@ -222,56 +246,49 @@ class UploadProceser implements Runnable {
         MultiValueMap<String, Object> parts = new LinkedMultiValueMap<String, Object>();
         parts.add("file", new FileSystemResource(new File(document.getSourcePath())));
         HttpEntity<Object> hpEntity = new HttpEntity<Object>(parts, headers);
-        logger.debug("Thread "+Thread.currentThread().getName()+ "begin upload file");
+        logger.debug("Thread " + Thread.currentThread().getName() + "begin upload file");
         try {
             String restResp = resttemplate.postForObject(uploadServiceUrl, parts, String.class);
-            logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" +(System.currentTimeMillis()-start));
-            UploadMetaData umd=null;
-            if(restResp!=null)
-                umd= JSON.parseObject(restResp, UploadMetaData.class);
+            logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" + (System.currentTimeMillis() - start));
+            UploadMetaData umd = null;
+            if (restResp != null)
+                umd = JSON.parseObject(restResp, UploadMetaData.class);
             if (umd != null) {
                 return true;
             }
 
-        }catch(Exception ex){
-            logger.error(ex.getMessage(),ex);
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
         }
         return false;
     }
 
-    private boolean restPostDocument(Document document) {
-        if(document==null||document.getContents()==null) return false;
-        long start=System.currentTimeMillis();
+    private void restPostDocument(Document document) {
+        if (document == null || document.getContents() == null) return;
+        long start = System.currentTimeMillis();
         HttpHeaders headers = new HttpHeaders();
         MediaType type = MediaType.parseMediaType("application/json; charset=UTF-8");
         headers.setContentType(type);
         headers.add("Accept", MediaType.APPLICATION_JSON.toString());
         HttpEntity<Object> hpEntity = new HttpEntity<Object>(JSON.toJSONString(document), headers);
-        logger.debug("Thread "+Thread.currentThread().getName()+ " begin upload file "+document.getFileName());
+        logger.debug("Thread " + Thread.currentThread().getName() + " begin upload file " + document.getFileName());
         try {
-            //HttpEntity<String> response = resttemplate.exchange(uploadServiceUrl, HttpMethod.POST, hpEntity, String.class);
-            //if(response==null) return false;
-            //restResp = response.getBody();
             ListenableFuture<ResponseEntity<String>> future = restTemplate.postForEntity(uploadServiceUrl, hpEntity, String.class);
             future.addCallback(new ListenableFutureCallback<ResponseEntity<String>>() {
                 public void onSuccess(ResponseEntity<String> resp) {
                     restResp = resp.getBody();
                 }
+
                 public void onFailure(Throwable t) {
-                    logger.error(t.getMessage(),t);
+                    logger.error(t.getMessage(), t);
+                    moveFile(new File(local7zPath + File.separator + document.getFileName()), false);
                 }
             });
-            logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" +(System.currentTimeMillis()-start));
-            UploadMetaData umd=null;
-            if(restResp!=null)
-                umd= JSON.parseObject(restResp, UploadMetaData.class);
-            if (umd != null) {
-                return true;
-            }
-
-        }catch(Exception ex){
-            logger.error(ex.getMessage(),ex);
+            logger.debug("Thread " + Thread.currentThread().getName() + " rest call cost:" + (System.currentTimeMillis() - start));
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
+            moveFile(new File(local7zPath + File.separator + document.getFileName()), false);
         }
-        return false;
+        moveFile(new File(local7zPath + File.separator + document.getFileName()), true);
     }
 }
