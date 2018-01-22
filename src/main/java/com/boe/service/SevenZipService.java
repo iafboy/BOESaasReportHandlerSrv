@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 
 @Service("SevenZipService")
-public class SevenZipService {
+public class SevenZipService implements ComprssServiceInf{
     private Logger logger = LoggerFactory.getLogger(UploadController.class);
 
     @Value("${local.sevenzipfile.path}")
@@ -62,6 +62,42 @@ public class SevenZipService {
                 }
         }
         return outFile;
+    }
+
+    public byte[] compressDocumentBytes(byte[] inByte) {
+        byte[] result=null;
+        if(inByte==null) return null;
+        ByteArrayInputStream inStream = null;
+        ByteArrayOutputStream outStream = null;
+        try {
+
+            inStream = new ByteArrayInputStream(inByte);
+            outStream = new ByteArrayOutputStream();
+            boolean eos = false;
+            SevenZip.Compression.LZMA.Encoder encoder = new SevenZip.Compression.LZMA.Encoder();
+            encoder.SetEndMarkerMode(eos);
+            encoder.WriteCoderProperties(outStream);
+            encoder.Code(inStream, outStream, -1, -1, null);
+            result=outStream.toByteArray();
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
+        } finally {
+            if (outStream != null) {
+                try {
+                    outStream.flush();
+                    outStream.close();
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
+            }
+            if (inStream != null)
+                try {
+                    inStream.close();
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
+        }
+        return result;
     }
 
     @Value("${decompressfile.path}")
