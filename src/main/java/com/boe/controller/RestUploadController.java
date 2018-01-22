@@ -1,6 +1,7 @@
 package com.boe.controller;
 
 import com.alibaba.fastjson.JSON;
+import com.boe.Common.CommonParams;
 import com.boe.domains.Document;
 import com.boe.domains.UploadMetaData;
 import com.boe.service.ComprssServiceInf;
@@ -103,7 +104,7 @@ public class RestUploadController {
             logger.info("saved to " + UPLOADED_FOLDER + File.separator + document.getFileName());
             byte[] contents = sevenZipService.deCompressDocumentToBytes(path.toFile());
             //restCall;
-            //this.restPostCall(contents);
+            this.restPostCall(contents);
             FileUtils.copyFile(new File(UPLOADED_FOLDER + File.separator + document.getFileName()), new File(webSuccFolder + File.separator + System.currentTimeMillis() + "." + document.getFileName()));
             FileUtils.forceDelete(new File(UPLOADED_FOLDER + File.separator + document.getFileName()));
         } catch (Exception e) {
@@ -123,14 +124,16 @@ public class RestUploadController {
         MediaType type = MediaType.parseMediaType("application/json; charset=UTF-8");
         headers.setContentType(type);
         headers.add("Accept", MediaType.APPLICATION_JSON.toString());
-        HttpEntity<Object> hpEntity = new HttpEntity<Object>(JSON.toJSONString(document), headers);
+        //现在只是发送测试数据
+        HttpEntity<Object> hpEntity = new HttpEntity<Object>(CommonParams.testMessage, headers);
         try {
-            ListenableFuture<ResponseEntity<String>> future = srvRestTemplate.postForEntity("xxxxxxxxxxx", hpEntity, String.class);
+            String saasURL="http://114.247.181.27:8007/siebel-rest/v1.0/service/BOE%20VOC1%20Upsert%20Interface%20Service/Upsert";
+            ListenableFuture<ResponseEntity<String>> future = srvRestTemplate.postForEntity(saasURL, hpEntity, String.class);
             future.addCallback(new ListenableFutureCallback<ResponseEntity<String>>() {
                 public void onSuccess(ResponseEntity<String> resp) {
                     String restResp = resp.getBody();
+                    logger.debug("Call Saas API reply: "+restResp);
                 }
-
                 public void onFailure(Throwable t) {
                     logger.error(t.getMessage(), t);
                 }

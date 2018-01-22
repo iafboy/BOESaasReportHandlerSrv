@@ -230,7 +230,6 @@ class UploadProceser implements Runnable {
         try {
             FileUtils.copyFile(inFile, new File(folderPath + File.separator + String.valueOf(System.currentTimeMillis()) + "." + inFile.getName()));
             FileUtils.forceDelete(inFile);
-            logger.debug("moved file " + inFile.getAbsolutePath() + " tp " + folderPath + File.separator + String.valueOf(System.currentTimeMillis()) + "." + inFile.getName());
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
         }
